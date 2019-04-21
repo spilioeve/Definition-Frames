@@ -9,15 +9,33 @@ import random
 import torch.nn.functional as F
 from sklearn.metrics import precision_recall_fscore_support as scorer
 import numpy as np
+import ast
 import string
 
 torch.manual_seed(1)
 
 
+def setEmbeddings(embed_type):
+    file = '../data/glove.6B.100d.txt'
+    if embed_type == 'glove':
+        file = '../data/glove.6B.100d.txt'
+    embeddings = {}
+    f = open(file)
+    lines = f.read().split('\n')[:-1]
+    f.close()
+    for line in lines:
+        vector = line.split(' ')
+        word = vector[0]
+        vector = [float(i) for i in vector[1:]]
+        embeddings[word] = vector
+    embeddings['UNK'] = len(vector) * [0.0]
+    return embeddings
+
 class RelationExtraction:
 
-    def __init__(self, embedFile, path, modelType, embed_Dim, charDim, hidden, num_layers):
-        self.embeddings= self.setEmbeddings(path + embedFile)
+    def __init__(self, modelType, embed_type=None, embed_Dim=200, charDim=30, hidden=100, num_layers=1):
+        if embed_type!=None:
+            self.embeddings= setEmbeddings(embed_type)
         self.word_vocab={'<PAD>':0}
         self.char_vocab={'<PAD>':0}
         self.chars_inverse= {0:'<PAD>'}
@@ -32,26 +50,11 @@ class RelationExtraction:
         self.charDim= charDim
         self.hidden= hidden
         self.num_layers= num_layers
-        self.path= path
         self.Max_Char=1
         self.use_gpu = torch.cuda.is_available()
 
-
-    def setEmbeddings(self, file):
-        embeddings = {}
-        f=open(file)
-        lines=f.read().split('\n')[:-1]
-        f.close()
-        for line in lines:
-            vector= line.split(' ')
-            word= vector[0]
-            vector= [float(i) for i in vector[1:]]
-            embeddings[word]= vector
-        embeddings['UNK'] = len(vector) * [0.0]
-        return embeddings
-
-    def loadData(self, dataType, embeddings):
-        f=open(self.path+'data/'+ dataType+'.ibo')
+    def loadData(self, dataFile, embeddings):
+        f=open(dataFile)
         sentences= f.read().split('\n\n')[:-1]
         f.close()
         data=[]
@@ -262,13 +265,18 @@ class RelationExtraction:
         return F1_micro, F1_macro
 
 
-    def trainModel(self, num_epochs, trainDataSet, testDataSet, batch_size, modelType, outputPath, embeddings):
-        testDataPath='Wikipedia/'+testDataSet+'/'+testDataSet
-        train= self.loadData(trainDataSet+ '/train', embeddings)
-        dev= self.loadData(trainDataSet+'/dev', embeddings)
-        test= self.loadData(trainDataSet+'/test', embeddings)
+    def trainModel(self, num_epochs, trainData, testData=None, batch_size=16, modelType='LSTM', embeddings=False):
+        testDataPath='../data/'+testData
+        train= self.loadData('../data/'+trainData+ '/train.ibo', embeddings)
+        dev= self.loadData('../data/'+trainData+'/dev.ibo', embeddings)
+        test= self.loadData('../data/'+trainData+'/test.ibo', embeddings)
         dev = self.batchify(dev, batch_size, 4)
         test = self.batchify(test, batch_size, 4, randomize=False)
+        f=open('../data/model_vocabulary.txt', 'w')
+        vocab_params={'word_vocab':self.word_vocab, 'char_vocab':self.char_vocab, 'word_inverse': self.word_inverse, 'chars_inverse':self.chars_inverse,
+                      'pos_vocab':self.pos_vocab, 'chunk_vocab':self.chunk_vocab, 'labels':self.labels, 'labels_inverse':self.labels_inverse}
+        f.write(str(vocab_params))
+        f.close()
         if modelType== 'BiLSTM_CNN':
             print('Model not currently available')
             model= BiLSTM_CNN(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), len(self.char_vocab), self.embed_Dim, self.charDim, self.hidden, self.num_layers, batch_size,
@@ -283,9 +291,11 @@ class RelationExtraction:
         print('Evaluating Train Data:')
         with torch.no_grad():
             train_i = self.batchify(train, batch_size, 4)
-            self.test(model, train_i, self.path+outputPath+'/train.ibo', True)
+            self.test(model, train_i, '../data/output/train.ibo', True)
         best_f1_macro=0.0
         best_f1_micro=0.0
+        print('Start training..')
+        pdb.set_trace()
         for epoch in range(num_epochs):
             print('Epoch Number:')
             print(epoch)
@@ -318,31 +328,48 @@ class RelationExtraction:
         pdb.set_trace()
         with torch.no_grad():
             print('Predictions For Test Set are:')
-            self.test(model, test, self.path + outputPath + '/test'+ '.ibo', True)
-            if testDataSet!= 'None':
+            self.test(model, test, '../data/output/test'+ '.ibo', True)
+            if testData!= 'None':
                 wiki = self.loadData(testDataPath, embeddings)
                 wiki = self.batchify(wiki, batch_size, 4, randomize=False)
-                self.test(model, wiki, self.path + outputPath + '/wiki_'+ str(testDataSet)+ '.ibo', True)
-        torch.save(model, self.path + 'models/model'+str(num_epochs)+'_'+str(modelType)+'1_'+testDataSet)
+                self.test(model, wiki, '../data/output/wiki_'+ str(testData)+ '.ibo', True)
+        torch.save(model, '../data/models/model_20batch')
 
-    def evaluateModel(self, num_epochs, trainDataSet, testDataSet, batch_size, modelType, outputPath, embeddings):
-        train= self.loadData(trainDataSet+ '/train', embeddings)
-        dev= self.loadData(trainDataSet+'/dev', embeddings)
-        test= self.loadData(trainDataSet+'/test', embeddings)
-        wiki= self.loadData('Wikipedia/' + testDataSet+'/'+testDataSet, embeddings)
-        dev = self.batchify(dev, batch_size, 4)
+    def update_params(self, params):
+        self.labels_inverse=params['labels_inverse']
+        self.labels= params['labels']
+        self.chunk_vocab=params['chunk_vocab']
+        self.pos_vocab=params['pos_vocab']
+        self.chars_inverse=params['chars_inverse']
+        self.word_inverse=params['word_inverse']
+        self.char_vocab=params['char_vocab']
+        self.word_vocab=params['word_vocab']
+
+    def evaluateModel(self, testDataSet, modelName, batch_size, embeddings=False):
+        # trainData='ConceptNet'
+        # train = self.loadData('../data/' + trainData + '/train.ibo', embeddings)
+        # dev = self.loadData('../data/' + trainData + '/dev.ibo', embeddings)
+        # test = self.loadData('../data/' + trainData + '/test.ibo', embeddings)
+        # f=open('../data/model_vocabulary.txt', 'w')
+        # vocab_params={'word_vocab':self.word_vocab, 'char_vocab':self.char_vocab, 'word_inverse': self.word_inverse, 'chars_inverse':self.chars_inverse,
+        #               'pos_vocab':self.pos_vocab, 'chunk_vocab':self.chunk_vocab, 'labels':self.labels, 'labels_inverse':self.labels_inverse}
+        # f.write(str(vocab_params))
+        # f.close()
+        # pdb.set_trace()
+        f=open('../data/model_vocabulary.txt')
+        vocab_params= ast.literal_eval(f.read())
+        f.close()
+        self.update_params(vocab_params)
+        pdb.set_trace()
+        wiki = self.loadData('../data/' + testDataSet, embeddings)
         wiki = self.batchify(wiki, batch_size, 4, randomize=False)
-        test = self.batchify(test, batch_size, 4, randomize=False)
-        if modelType==' CNN':
-            print('Model not currently available')
-            #model= CNN(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), self.embed_Dim)
-        else:
-            model= BiLSTM(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), self.embed_Dim, self.hidden, self.num_layers, batch_size)
-        model= torch.load(self.path + 'models/model'+str(num_epochs)+'_'+str(modelType))
+
+        #model= BiLSTM(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), self.embed_Dim, self.hidden, self.num_layers, batch_size)
+        model= torch.load('../models/'+modelName)
         model.eval()
         #self.test(model, test)
-        self.test(model, test, self.path + outputPath + '/test' + '.ibo', True)
-        self.test(model, wiki, self.path + outputPath + '/wiki_'+testDataSet + '.ibo', True)
+        #self.test(model, test, '../data/output/test' + '.ibo', True)
+        self.test(model, wiki, '../data/output/wiki_'+testDataSet + '.ibo', True)
 
 
 
@@ -359,6 +386,7 @@ def main():
     parser.add_argument('--outputPath', type=str, default='data/output')
     parser.add_argument('--testDataset', type=str, default='OpenBook')
     parser.add_argument('--mode', type=str, default= 'train')
+    parser.add_argument('--input_model', default=None)
 
     args = parser.parse_args()
 
@@ -367,21 +395,18 @@ def main():
     modelType= args.model
     hidden = args.hiddenDim
     num_epochs = args.num_epochs
-    path= args.path
     batch_size= args.batch_size
     num_layers= args.num_layers
-    outputPath= args.outputPath
     testDataset= args.testDataset
     mode= args.mode
-    testDataset='None'
 
-    rel_extractor = RelationExtraction('data/glove.6B.100d.txt', path, modelType, embedding_Dim, char_Dim, hidden, num_layers)
+    rel_extractor = RelationExtraction(modelType)
     if mode== 'train':
-        rel_extractor.trainModel(num_epochs, 'ConceptNet', testDataset, batch_size, modelType, outputPath, embeddings=False,)
+        rel_extractor.trainModel(num_epochs, 'ConceptNet', testDataset, batch_size, modelType, embeddings=False)
     else:
         print('Evaluating Model')
-        rel_extractor.evaluateModel(num_epochs, 'ConceptNet', testDataset, batch_size, modelType,
-                                 outputPath, embeddings=False)
+        model_name= args.input_model
+        rel_extractor.evaluateModel(testDataset, model_name, batch_size)
 
 
 

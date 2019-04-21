@@ -53,6 +53,7 @@ class BiLSTM(nn.Module):
         y_pred= y_pred.view(-1, self.labels_size)
         mask = (y > 0).float()
         nb_tokens = int(torch.sum(mask).data[0])
+        #nb_tokens = int(torch.sum(mask).item(0))
         y_pred = y_pred[range(y_pred.shape[0]), y] * mask
         ce_loss = -torch.sum(y_pred) / nb_tokens
         return  ce_loss

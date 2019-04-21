@@ -232,7 +232,7 @@ class ConceptNetData:
 
 class WikiData:
 
-    def __init__(self, corenlpPath, dataset):
+    def __init__(self, corenlpPath, dataset=None):
         self.dataset= dataset
         self.keyPhrases={}
         os.environ['CORENLP_HOME'] = corenlpPath
@@ -279,8 +279,7 @@ class WikiData:
         return 'O', sentence
 
     def constructSentences(self, wikiTitle, text):
-        data1 = ""
-        data2 = ""
+        data = ""
         wikiTitle = wikiTitle.lower()
         ann_corenlp = self.CoreNLPclient.annotate(text)
         for sIndex in range(len(ann_corenlp.sentence)):
@@ -295,7 +294,7 @@ class WikiData:
                 #for edge in deps.edge:
                 #    dep_dic[edge.target - 1] = {'source': edge.source - 1, 'dep': edge.dep}
                 flag= False
-                datum1=''
+                datum=''
                 sentence = 'S' + str(len(self.keyPhrases) + 1)
                 self.keyPhrases[sentence] = [0]
                 chunkVector = self.getChunks(parse)
@@ -308,40 +307,35 @@ class WikiData:
                         args = [str(sIndex + 1), token.word, token.pos, chunkVector[i], '1', 'O']
                     else:
                         args = [str(sIndex + 1), token.word, token.pos, chunkVector[i], '0', 'O']
-                    args2 = [str(sIndex + 1), token.word, token.pos, chunkVector[i], 'O']
-                    datum1 += str.join(' ', args) +'\n'
-                    datum2 = str.join(' ', args2)
+                    datum += str.join(' ', args) +'\n'
                     #data1 += datum1 + '\n'
-                    data2 += datum2 + '\n'
-                if flag: data1 += datum1+ '\n'
-                data2 += '\n'
-        return data1, data2
+                if flag: data += datum+ '\n'
+        return data
 
-    def constructWikiData(self, wiki_file):
-        f=open(wiki_file)
-        wiki_dict = ast.literal_eval(f.read())
-        f.close()
-        data1 = ""
-        data2 = ""
-        counter=0.
-        print(len(wiki_dict))
+    def constructWikiData(self, outputF, wiki_file=None, wiki_dict=None):
+        if wiki_dict==None:
+            if wiki_file== None:
+                print("Error: please add file or dictionary...")
+                return
+            f=open(wiki_file)
+            wiki_dict = ast.literal_eval(f.read())
+            f.close()
+        data = ""
+        counter=0
         for wikiTitle in wiki_dict:
             counter+=1
-            print('Processing: '+ str(counter))
+            if counter%50==0:
+                print('Processing: '+ str(counter)+ '/'+str(len(wiki_dict)))
             text = wiki_dict[wikiTitle]
             try:
-                d1, d2 = self.constructSentences(wikiTitle, text)
-                data1 += d1
-                data2 += d2
+                data+= self.constructSentences(wikiTitle, text)
             except:
                 print("Could not process File")
                 print(wikiTitle)
-        f = open('data//Wikipedia/'+self.dataset+ '/' + self.dataset+'.ibo', 'w')
-        f.write(data1)
+        f = open('../data/'+outputF+'.ibo', 'w')
+        f.write(data)
         f.close()
-        f = open('data/Wikipedia/'+self.dataset+ '/' + self.dataset+'2.ibo', 'w')
-        f.write(data2)
-        f.close()
+
 
 def main():
     parser = argparse.ArgumentParser(description='Augment Data with Wikipedia Links')

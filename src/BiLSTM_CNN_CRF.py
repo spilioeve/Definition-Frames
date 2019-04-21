@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import collections
 from itertools import repeat
 import torch.nn.utils.rnn as rnn_utils
-from Frame_Generator.BiLSTM_CNN import BiLSTM_CNN
+from src.BiLSTM_CNN import BiLSTM_CNN
 
 
 START_TAG = "<START>"
