@@ -272,6 +272,8 @@ class RelationExtraction:
         test= self.loadData('../data/'+trainData+'/test.ibo', embeddings)
         dev = self.batchify(dev, batch_size, 4)
         test = self.batchify(test, batch_size, 4, randomize=False)
+        wiki = self.loadData(testDataPath, embeddings)
+        wiki = self.batchify(wiki, batch_size, 4, randomize=False)
         f=open('../data/model_vocabulary.txt', 'w')
         vocab_params={'word_vocab':self.word_vocab, 'char_vocab':self.char_vocab, 'word_inverse': self.word_inverse, 'chars_inverse':self.chars_inverse,
                       'pos_vocab':self.pos_vocab, 'chunk_vocab':self.chunk_vocab, 'labels':self.labels, 'labels_inverse':self.labels_inverse}
@@ -295,7 +297,6 @@ class RelationExtraction:
         best_f1_macro=0.0
         best_f1_micro=0.0
         print('Start training..')
-        pdb.set_trace()
         for epoch in range(num_epochs):
             print('Epoch Number:')
             print(epoch)
@@ -329,11 +330,12 @@ class RelationExtraction:
         with torch.no_grad():
             print('Predictions For Test Set are:')
             self.test(model, test, '../data/output/test'+ '.ibo', True)
+            self.test(model, wiki, '../data/output/wiki_' + str(testData) + '.ibo', True)
             if testData!= 'None':
                 wiki = self.loadData(testDataPath, embeddings)
                 wiki = self.batchify(wiki, batch_size, 4, randomize=False)
                 self.test(model, wiki, '../data/output/wiki_'+ str(testData)+ '.ibo', True)
-        torch.save(model, '../data/models/model_20batch')
+        torch.save(model, '../models/model_20batch')
 
     def update_params(self, params):
         self.labels_inverse=params['labels_inverse']
