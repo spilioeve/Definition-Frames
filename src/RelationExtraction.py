@@ -317,25 +317,23 @@ class RelationExtraction:
                 f1_micro, f1_macro = self.test(model, dev)
                 if f1_micro < best_f1_micro:
                     print('Early Convergence!!!!')
-                    pdb.set_trace()
                     break
                 elif f1_macro < best_f1_macro:
                     print('Early Convergence!!!!')
-                    pdb.set_trace()
                     break
                 else:
                     best_f1_micro= f1_micro
                     best_f1_macro = f1_macro
-        pdb.set_trace()
         with torch.no_grad():
             print('Predictions For Test Set are:')
             self.test(model, test, '../data/output/test'+ '.ibo', True)
-            self.test(model, wiki, '../data/output/wiki_' + str(testData) + '.ibo', True)
+            #self.test(model, wiki, '../data/output/wiki_' + str(testData) + '.ibo', True)
             if testData!= 'None':
                 wiki = self.loadData(testDataPath, embeddings)
                 wiki = self.batchify(wiki, batch_size, 4, randomize=False)
-                self.test(model, wiki, '../data/output/wiki_'+ str(testData)+ '.ibo', True)
-        torch.save(model, '../models/model_20batch')
+                self.test(model, wiki, '../data/output/wiki_'+ str(testData), True)
+        torch.save(model, '../models/model_'+str(modelType))
+        pdb.set_trace()
 
     def update_params(self, params):
         self.labels_inverse=params['labels_inverse']
@@ -372,6 +370,7 @@ class RelationExtraction:
         #self.test(model, test)
         #self.test(model, test, '../data/output/test' + '.ibo', True)
         self.test(model, wiki, '../data/output/wiki_'+testDataSet + '.ibo', True)
+
 
 
 

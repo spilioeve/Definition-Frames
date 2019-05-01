@@ -1,4 +1,6 @@
 sun
+kitchen
+toilet
 sunlight
 automobile
 car
@@ -1452,8 +1454,8 @@ sense
 jumper
 jury
 official
-kitchen toilet 2.545454545
-
+kitchen
+toilet
 knight
 prince
 knowledge

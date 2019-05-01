@@ -230,10 +230,6 @@ def translateAMT(inputF, num_samples, size):
 
 
 
-
-
-
-
 def AMTExperiment(numberExamples=200):
     rels = {'IsA': 'is a', 'HasProperty': 'has the property', 'UsedFor': 'is used for', 'PartOf': 'is part of',
             'Causes': 'causes', 'DefinedAs': 'is defined as', 'MadeOf': 'is made by', 'InstanceOf': 'is an instance of'}
@@ -330,8 +326,9 @@ def main():
     dataset=args.dataset
     allenIE= args.allenIE
 
-    dataprocess = PostProcessData(dataset, allenIE)
+    dataprocess = PostProcessData(dataset, getAllen=False)
     #files= os.listdir('data/'+dataset)
+
     if dataset=='OpenBook':
         files= ['train.jsonl', 'test.jsonl', 'dev.jsonl']
     else:

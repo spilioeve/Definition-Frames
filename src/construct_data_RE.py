@@ -5,69 +5,56 @@ import pdb
 import argparse
 import requests
 import random
+from nltk.corpus import stopwords
 
 class ConceptNetData:
-    def __init__(self, corenlp):
-        self.rels=['IsA', 'HasProperty', 'UsedFor', 'PartOf', 'Causes', 'DefinedAs', 'MadeOf', 'InstanceOf']
+    def __init__(self, corenlpPath):
+        #self.rels=['IsA', 'HasProperty', 'UsedFor', 'PartOf', 'Causes', 'DefinedAs', 'MadeOf']
+        ##Change them to:
+        self.rels = ['IsA', 'UsedFor', 'PartOf', 'HasA', 'Causes', 'MadeOf']
         self.keyPhrases = {}
-        os.environ['CORENLP_HOME'] = corenlp
+        os.environ['CORENLP_HOME'] = corenlpPath
         self.CoreNLPclient = corenlp.CoreNLPClient(annotators=['tokenize', 'ssplit', 'pos', 'depparse', 'lemma', 'parse'])
 
 
-    # def constructSentenceData(self, term):
-    #     data=""
-    #     y_vector={}
-    #     obj = requests.get('http://api.conceptnet.io/c/en/'+ term.lower()).json()
-    #     edges= obj['edges']
-    #     if len(edges)==0:
-    #         print('Term not in ConceptNet')
-    #         return "", {}
-    #     for e in edges:
-    #         rel= e['rel']['label']
-    #         text= e['surfaceText']
-    #         entity1= e['start']['label']
-    #         entity2= e['end']['label']
-    #         if rel in self.rels:
-    #             print(text)
-    #         try:
-    #             #relations.append({'rel': rel, 'text':text, 'e1': entity1, 'e2':entity2})
-    #             text= str(text).replace('[', '')
-    #             text=text.replace(']', '')
-    #             span1= (text.index(entity1), text.index(entity1)+len(entity1))
-    #             i= span1[0]+1
-    #             span2= (text[i:].index(entity2)+i, text[i:].index(entity2)+len(entity2)+i)
-    #             ann_corenlp = self.CoreNLPclient.annotate(text[0].upper() + text[1:])
-    #             tokens = ann_corenlp.sentence[0].token
-    #             deps = ann_corenlp.sentence[0].enhancedPlusPlusDependencies
-    #             dep_dic = {deps.root[0] - 1: {'source': -1, 'dep': 'root'}}
-    #             for edge in deps.edge:
-    #                 dep_dic[edge.target - 1] = {'source': edge.source - 1, 'dep': edge.dep}
-    #             ibo = 'O'
-    #             sentence = 'S' + str(len(self.keyPhrases) + 1)
-    #             self.keyPhrases[sentence] = [0]
-    #             for token in tokens:
-    #                 index = token.tokenBeginIndex
-    #                 ibo, phrase_index = self.overlap([span1, span2], (token.beginChar, token.endChar), ibo,
-    #                                                  sentence)
-    #                 args = [token.word, ibo, token.pos, str(dep_dic[index]['source']), dep_dic[index]['dep'],
-    #                         str(index), phrase_index, '0']
-    #                 datum = str.join(' ', args)
-    #                 data += datum + '\n'
-    #             data+= '\n'
-    #             if span1[0]<span2[0]:
-    #                 k= self.keyPhrases[sentence]
-    #                 y_vector[sentence] = [rel, sentence+'.'+ str(k[0]), sentence+'.'+ str(k[1]), '']
-    #             else:
-    #                 y_vector[sentence] = [rel, sentence+'.'+ str(k[1]), sentence+'.'+ str(k[0]), ',REVERSE']
-    #         except:
-    #             pass
-    #     return data, y_vector
+    def constructCN_Relations(self, cn_file):
+        stop_words = set(stopwords.words('english'))
+        f=open(cn_file)
+        dic= ast.literal_eval(f.read())
+        f.close()
+        relation_dic={}
+        for rel in self.rels:
+            for item in dic[rel]:
+                cell = ast.literal_eval(item.split('\t')[4])
+                entity1 = cell['surfaceStart'].lower()
+                entity1=str.join(' ',list(set(entity1.split(' '))-stop_words))
+                entity2 = cell['surfaceEnd'].lower()
+                entity2 = str.join(' ', list(set(entity2.split(' ')) - stop_words))
+                if entity1 not in relation_dic:
+                    relation_dic[entity1] = {i: [] for i in self.rels}
+                relation_dic[entity1][rel].append(entity2)
+        refined_rels={}
+        for term in relation_dic:
+            frame = relation_dic[term]
+            i=0
+            for rel in frame:
+                if len(frame[rel])>0: i+=1
+            if i>1:
+                refined_rels[term]=frame
+        f=open('../data/ConceptNet/ConceptNet_relations.txt', 'w')
+        f.write(str(refined_rels))
+        f.close()
+        pdb.set_trace()
+
+
 
     def getAllDataConceptNet(self, file):
         f=open(file)
         dic= ast.literal_eval(f.read())
         f.close()
-        data=""
+        f = open('../data/ConceptNet/' + 'conceptNet2.ibo')
+        data=f.read()
+        f.close()
         y_vector={}
         for rel in dic:
             print(rel)
@@ -108,9 +95,6 @@ class ConceptNetData:
                                                          sentence)
                         key_ibo, _ = self.overlap([span1], (token.beginChar, token.endChar), key_ibo,
                                                          sentence)
-                        ##Change so ibo= ibo+'Keyphrase'
-                        # args = [token.word, ibo, token.pos, str(dep_dic[index]['source']), dep_dic[index]['dep'],
-                        #         str(index), phrase_index, '0']
                         tag='O'
                         if ibo!='O':
                             tag= ibo+rel
@@ -130,7 +114,8 @@ class ConceptNetData:
                 except:
                     print('Error')
                     print(item)
-        f = open('data/ConceptNet/' + 'conceptNet.ibo', 'w')
+
+        f = open('../data/ConceptNet/' + 'conceptNet2.ibo', 'w')
         f.write(data)
         f.close()
         return data
@@ -179,18 +164,18 @@ class ConceptNetData:
         data=data.split('\n\n')[:-1]
         random.shuffle(data)
         size= len(data)
-        train=data[:size*.8]
-        dev=data[size*0.8:size*0.9]
-        test=data[size*0.9:]
-        f=open('data/ConceptNet/train.ibo', 'w')
+        train=data[:size*8//10]
+        dev=data[size*8//10:size*9//10]
+        test=data[size*9//10:]
+        f=open('../data/ConceptNet/train2.ibo', 'w')
         for datum in train:
             f.write(datum+'\n\n')
         f.close()
-        f = open('data/ConceptNet/dev.ibo', 'w')
+        f = open('../data/ConceptNet/dev2.ibo', 'w')
         for datum in dev:
             f.write(datum + '\n\n')
         f.close()
-        f = open('data/ConceptNet/test.ibo', 'w')
+        f = open('../data/ConceptNet/test2.ibo', 'w')
         for datum in test:
             f.write(datum + '\n\n')
         f.close()
@@ -321,6 +306,7 @@ class WikiData:
             wiki_dict = ast.literal_eval(f.read())
             f.close()
         data = ""
+        unprocessed=[]
         counter=0
         for wikiTitle in wiki_dict:
             counter+=1
@@ -332,6 +318,7 @@ class WikiData:
             except:
                 print("Could not process File")
                 print(wikiTitle)
+                unprocessed.append(wikiTitle)
         f = open('../data/'+outputF+'.ibo', 'w')
         f.write(data)
         f.close()
@@ -341,7 +328,7 @@ def main():
     parser = argparse.ArgumentParser(description='Augment Data with Wikipedia Links')
     parser.add_argument('--dataset', type=str)
     parser.add_argument('--corenlp', type=str, default='/Users/evangeliaspiliopoulou/Desktop/stanfordCoreNLP')
-    parser.add_argument('--termF', type=str, default='data/Wikipedia/terms_to_defs.txt')
+    parser.add_argument('--termF', type=str, default='../data/terms_to_defs.txt')
     parser.add_argument('--mode', type=str, default='wiki')
     args = parser.parse_args()
 
@@ -353,13 +340,15 @@ def main():
         term_file= 'data/Wikipedia/terms_to_defs_OpenBook.txt'
     elif dataset=='ARC':
         term_file='data/Wikipedia/terms_to_defs_ARC.txt'
-    pdb.set_trace()
     if mode=='wiki':
+        print('Running Wikipedia')
         wiki_constructor= WikiData(corenlpPath, dataset)
-        wiki_constructor.constructWikiData(term_file)
+        wiki_constructor.constructWikiData('FrameTerms', wiki_file=term_file)
     elif mode== 'ConceptNet':
+        print('Running CN')
         cn_constructor= ConceptNetData(corenlpPath)
-        data= cn_constructor.getAllDataConceptNet('data/ConceptNet/allConceptNet.txt')
+        cn_constructor.constructCN_Relations('../data/ConceptNet/allConceptNet.txt')
+        data= cn_constructor.getAllDataConceptNet('../data/ConceptNet/allConceptNet.txt')
         cn_constructor.splitData(data)
     else:
         print("Not a valid Option of Data Source")
