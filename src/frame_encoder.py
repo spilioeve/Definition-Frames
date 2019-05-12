@@ -28,11 +28,10 @@ def cleanTokens(text):
     return new_text
 
 def setEmbeddings(embed_type):
-    file = '../data/glove.6B.50d.txt'
+    #file = '../data/embeddings/glove.6B.50d.txt'
     if embed_type== 'glove':
-        file= '../data/glove.6B.50d.txt'
         embeddings = {}
-        f=open(file)
+        f=open('../data/embeddings/glove.6B.50d.txt')
         lines=f.read().split('\n')[:-1]
         f.close()
         for line in lines:
@@ -68,8 +67,20 @@ def setEmbeddings(embed_type):
             vector = [float(i) for i in vector[1:]]
             embeddings[word] = vector
         embeddings['UNK'] = len(vector) * [0.0]
+    elif embed_type =='dict2vec':
+        file = '../data/embeddings/dict2vec-vectors-dim100.vec'
+        embeddings = {}
+        f = open(file)
+        lines = f.read().split('\n')[1:-1]
+        f.close()
+        for line in lines:
+            vector = line.split(' ')
+            word = vector[0]
+            vector = [float(i) for i in vector[1:-1]]
+            embeddings[word] = vector
+        embeddings['UNK'] = len(vector) * [0.0]
     else:
-        w2v_model= Word2Vec.load('../data/word2vec/'+embed_type)
+        w2v_model= Word2Vec.load('../data/embeddings/word2vec/'+embed_type)
         return w2v_model, 100
     return embeddings, len(vector)
 
@@ -129,8 +140,8 @@ class Frame2Vec:
 
     def frameAvgEmbeddings(self, outputF):
         f=open(outputF, 'w')
-        f1 = open('../frame_embeddings/average_w2v_wn.txt', 'w')
-        #f2 = open('../frame_embeddings/glove50.txt', 'w')
+        #f1 = open('../frame_embeddings/average_w2v_wn.txt', 'w')
+        f2 = open('../frame_embeddings/dict2vec.txt', 'w')
         for term in self.termList:
             term = term.lower()
             flag=True
@@ -159,10 +170,10 @@ class Frame2Vec:
                 f.write(term + ' ' + frame_embedding + '\n')
                 embedding= embedding+self.dimension[0]*self.dimension[1]*[0.]
                 embedding = str.join(' ', [str(i) for i in embedding])
-                #f2.write(term+' '+embedding+'\n')
-                avg_embedding += self.getAvgEmbeddings(allterms)
-                avg_embedding= str.join(' ', [str(i) for i in avg_embedding])
-                f1.write(term + ' ' + avg_embedding + '\n')
+                f2.write(term+' '+embedding+'\n')
+                # avg_embedding += self.getAvgEmbeddings(allterms)
+                # avg_embedding= str.join(' ', [str(i) for i in avg_embedding])
+                # f1.write(term + ' ' + avg_embedding + '\n')
             # else:
             #     frame_embedding = embedding+ self.dimension[0]*self.dimension[1] * [0.0]
             #     #frame_embedding = (self.dimension[1]+1)* embedding
@@ -170,8 +181,8 @@ class Frame2Vec:
             #     frame_embedding = str.join(' ', [str(i) for i in frame_embedding])
             #     f.write(term + ' ' + frame_embedding+'\n')
         f.close()
-        f1.close()
-        #f2.close()
+        #f1.close()
+        f2.close()
 
     def avgFrameEmbedding(self, outputF):
         f=open(outputF, 'w')
