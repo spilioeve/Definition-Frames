@@ -4,27 +4,25 @@ import torch.nn.functional as F
 
 
 class BiLSTM(nn.Module):
-    def __init__(self, labels, vocab_size, pos_size, chunk_size, embedding_dim, hidden_dim, number_layers, batch_Size):
+    def __init__(self, labels, vocab_size, pos_size, chunk_size, embedding_dim, hidden_dim, number_layers, batch_size):
         super(BiLSTM, self).__init__()
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.vocab_size = vocab_size
-        self.labels = labels
-        self.labels_size = len(labels)
-        self.batch_Size= batch_Size
+        self.label_size = len(labels)
+        self.batch_size= batch_size
         self.number_layers= number_layers
         self.word_embeds = nn.Embedding(vocab_size, embedding_dim, padding_idx= 0)
         self.chunk_embeds = nn.Embedding(chunk_size, 10, padding_idx= 0)
         self.pos_embeds = nn.Embedding(pos_size, 10, padding_idx= 0)
-        self.lstm = nn.LSTM(embedding_dim+21, hidden_dim //2,
-                            num_layers=number_layers, bidirectional=True, batch_first=True)
-        self.hidden2tag = nn.Linear(hidden_dim, self.labels_size)
+        self.lstm = nn.LSTM(embedding_dim+21, hidden_size=hidden_dim, bidirectional=True, batch_first=True)
+        self.hidden2labels = nn.Linear(hidden_dim*2, self.label_size)
         self.hidden = self.init_hidden()
 
 
     def init_hidden(self):
-        hidden1= torch.randn(2*self.number_layers, self.batch_Size, self.hidden_dim // 2)
-        hidden2 = torch.randn(2*self.number_layers, self.batch_Size, self.hidden_dim // 2)
+        hidden1= torch.randn(self.number_layers, self.batch_size, self.hidden_dim)
+        hidden2 = torch.randn(self.number_layers, self.batch_size, self.hidden_dim)
         return (hidden1, hidden2)
 
     def forward(self, sentence, char, sentences_length):
@@ -41,16 +39,16 @@ class BiLSTM(nn.Module):
         X, _ = torch.nn.utils.rnn.pad_packed_sequence(X, batch_first=True)
         X = X.contiguous()
         X = X.view(-1, X.shape[2])
-        X = self.hidden2tag(X)
+        X = self.hidden2labels(X)
         tag_space= F.log_softmax(X, dim=1)
-        tag_scores= tag_space.view(self.batch_Size, sentence.shape[1], self.labels_size)
+        tag_scores= tag_space.view(self.batch_size, sentence.shape[1], self.label_size)
         return tag_scores
 
 
     def loss(self, y_pred, y, sentences_length):
         #loss = nn.NLLLoss()
         y = y.view(-1)
-        y_pred= y_pred.view(-1, self.labels_size)
+        y_pred= y_pred.view(-1, self.label_size)
         mask = (y > 0).float()
         nb_tokens = int(torch.sum(mask).data[0])
         #nb_tokens = int(torch.sum(mask).item(0))

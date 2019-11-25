@@ -16,9 +16,6 @@ class Similarity:
 
     def __init__(self, embedFile):
         self.embeddings, self.dim =self.readEmbeddings(embedFile)
-        #self.baseline, self.baseDim=self.readEmbeddings(baseline)
-        #self.vocabulary={}
-
 
     def loadData(self, datasets):
         pairCount=0.
@@ -32,7 +29,7 @@ class Similarity:
             for line in lines:
                 word1, word2, score= line.split()
                 score=float(score)
-                if score>norm: norm= score
+                if score>norm: norm= int(score+0.99)
                 data_pairs[(word1, word2)]= score
             pairs.update({i:data_pairs[i]/norm for i in data_pairs})
         X = np.zeros((2*self.dim))
@@ -73,7 +70,6 @@ class Similarity:
         X, Y=self.loadData(datasets)
         num_data= X.shape[0]
         if num_data<10: return
-
         train_X= X[:int(num_data*0.8),:]
         train_y= Y[:int(num_data*0.8)]
         test_X= X[int(num_data*0.8):, :]
@@ -89,21 +85,10 @@ class Similarity:
         rho, pval = stats.spearmanr(pred_y, test_y)
         print('Rho, Pval: ' + str(rho) + '\t' + str(pval))
 
-        # print('Trial Scores')
-        # print(train_score, test_score)
-        # error = cross_val_score(linear_regr, X, Y, cv=5, scoring='neg_mean_squared_error')
-        # r2 = cross_val_score(linear_regr, X, Y, cv=5, scoring='r2')
-        # print('Linear Reg: '+ str(-1*error.mean())+ '\t'+ str(r2.mean()))
-        # ridge_regr = Ridge(alpha=0.6)
-        # error = cross_val_score(ridge_regr, X, Y, cv=5, scoring='neg_mean_squared_error')
-        # r2 = cross_val_score(ridge_regr, X, Y, cv=5, scoring='r2')
-        # print('Ridge: '+ str(-1*error.mean())+ '\t'+ str(r2.mean()))
-        # lasso = Lasso(alpha=0.6)
-        # error = cross_val_score(lasso, X, Y, cv=5, scoring='neg_mean_squared_error')
-        # r2 = cross_val_score(lasso, X, Y, cv=5, scoring='r2')
-        # print('Lasso: '+ str(-1*error.mean())+'\t'+str(r2.mean()))
 
 
+    #Maybe I should shuffle it so instead of giving weight to all dimensions, I give weight to ONLY a vector??? This would be much easier,
+    #and pretty sure that GloVe would suck then
     def neuralSimilarity(self, datasets, epochs):
         X, Y = self.loadData(datasets)
         #X_, Y_ =self.loadBaseline(datasets)
@@ -119,15 +104,10 @@ class Similarity:
             train_y= Y[train]
             test_X= X[test]
             test_y=Y[test]
-            # train_X= X[:int(num_data*0.8),:]
-            # train_y= Y[:int(num_data*0.8)]
-            # test_X= X[int(num_data*0.8):, :]
-            # test_y= Y[int(num_data*0.8):]
             #model = nn.Sequential(nn.Linear(self.dim, int(self.dim/4)), nn.ReLU(), nn.Linear(int(self.dim/4), self.dim))
             model= nn.Linear(self.dim, self.dim)
             cos = nn.CosineSimilarity()
             loss = nn.MSELoss()
-            #loss = nn.CrossEntropyLoss()
             optimizer = optim.SGD(model.parameters(), lr=0.03, weight_decay=1e-4)
             for epoch in range(epochs):
                 # print("epoch: " + str(epoch))

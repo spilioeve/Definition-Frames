@@ -11,13 +11,13 @@ class ConceptNetData:
     def __init__(self, corenlpPath):
         #self.rels=['IsA', 'HasProperty', 'UsedFor', 'PartOf', 'Causes', 'DefinedAs', 'MadeOf']
         ##Change them to:
-        self.rels = ['IsA', 'UsedFor', 'PartOf', 'HasA', 'Causes', 'MadeOf']
+        self.rels = ['IsA', 'UsedFor', 'PartOf', 'HasA', 'CreatedBy', 'MadeOf']
         self.keyPhrases = {}
         os.environ['CORENLP_HOME'] = corenlpPath
         self.CoreNLPclient = corenlp.CoreNLPClient(annotators=['tokenize', 'ssplit', 'pos', 'depparse', 'lemma', 'parse'])
 
 
-    def constructCN_Relations(self, cn_file):
+    def construct_cn_relations(self, cn_file):
         stop_words = set(stopwords.words('english'))
         f=open(cn_file)
         dic= ast.literal_eval(f.read())
@@ -44,22 +44,21 @@ class ConceptNetData:
         f=open('../data/ConceptNet/ConceptNet_relations.txt', 'w')
         f.write(str(refined_rels))
         f.close()
-        pdb.set_trace()
 
 
 
-    def getAllDataConceptNet(self, file):
-        f=open(file)
-        dic= ast.literal_eval(f.read())
+    def augment_cn_data(self, data_file):
+        f=open(data_file)
+        new_data= ast.literal_eval(f.read())
         f.close()
         f = open('../data/ConceptNet/' + 'conceptNet2.ibo')
         data=f.read()
         f.close()
         y_vector={}
-        for rel in dic:
+        for rel in new_data:
             print(rel)
-            print(len(dic[rel]))
-            for item in dic[rel]:
+            print(len(new_data[rel]))
+            for item in new_data[rel]:
                 cell = ast.literal_eval(item.split('\t')[4])
                 try:
                     text = cell['surfaceText']
@@ -160,22 +159,22 @@ class ConceptNetData:
                 return 'B-', sentence+'.'+ str(prevKeyPhrase+1)
         return 'O', sentence
 
-    def splitData(self, data):
+    def split_data(self, data):
         data=data.split('\n\n')[:-1]
         random.shuffle(data)
         size= len(data)
         train=data[:size*8//10]
         dev=data[size*8//10:size*9//10]
         test=data[size*9//10:]
-        f=open('../data/ConceptNet/train2.ibo', 'w')
+        f=open('../data/ConceptNet/train.ibo', 'w')
         for datum in train:
             f.write(datum+'\n\n')
         f.close()
-        f = open('../data/ConceptNet/dev2.ibo', 'w')
+        f = open('../data/ConceptNet/dev.ibo', 'w')
         for datum in dev:
             f.write(datum + '\n\n')
         f.close()
-        f = open('../data/ConceptNet/test2.ibo', 'w')
+        f = open('../data/ConceptNet/test.ibo', 'w')
         for datum in test:
             f.write(datum + '\n\n')
         f.close()
@@ -347,9 +346,9 @@ def main():
     elif mode== 'ConceptNet':
         print('Running CN')
         cn_constructor= ConceptNetData(corenlpPath)
-        cn_constructor.constructCN_Relations('../data/ConceptNet/allConceptNet.txt')
-        data= cn_constructor.getAllDataConceptNet('../data/ConceptNet/allConceptNet.txt')
-        cn_constructor.splitData(data)
+        #cn_constructor.construct_cn_relations('../data/ConceptNet/allConceptNet.txt')
+        data= cn_constructor.augment_cn_data('../data/ConceptNet/allConceptNet.txt')
+        cn_constructor.split_data(data)
     else:
         print("Not a valid Option of Data Source")
 
