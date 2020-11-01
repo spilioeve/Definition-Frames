@@ -9,3 +9,5 @@
  [1] Evangelia Spiliopoulou, Artidoro Pagnoni, Eduard Hovy. 2020. Definition Frames: Using Definitions for Hybrid Concept Representations. To appear in COLING 2020.
  
  [2] Branimir Boguraev and James Pustejovsky.  1990.  Lexical ambiguity and the role of knowledge representationin lexicon design.  InProceedings of the 13th conference on Computational linguistics-Volume 2, pages 36–41.Association for Computational Linguistics
+
+Pending: data update  
