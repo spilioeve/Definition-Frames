@@ -1,31 +1,29 @@
 import wikipedia
+from PyDictionary import PyDictionary
+from nltk.corpus import words
 import corenlp
 import json
 import os
 import requests
 import argparse
-import ast
 
 
 
-class Wiki_Link_Extractor:
 
-    def __init__(self, CoreNLPPath, dataFiles=None):
-        self.dataFiles= dataFiles
+class Definition_Finder:
+
+    def __init__(self, corenlp_path, previous_def_file):
         self.nounTags=['NN', 'NNP', 'NNS', "NNPS",'VBG']
         #os.environ['CORENLP_HOME'] = '/Users/evangeliaspiliopoulou/Desktop/stanfordCoreNLP'
-        os.environ['CORENLP_HOME'] = CoreNLPPath
+        os.environ['CORENLP_HOME'] = corenlp_path
         self.CoreNLPclient = corenlp.CoreNLPClient(annotators=['tokenize', 'ssplit', 'pos', 'lemma'])
-        f = open('../data/terms_to_defs.txt')
-        self.wiki_dic = ast.literal_eval(f.read())
-        f.close()
-        self.exceptionTerms=[]
-        #self.questions_to_wikiterms={}
+        if previous_def_file!= None:
+            self.previous_def = json.load(open(previous_def_file))
+        self.exceptionTerms= set()
 
-
-    def getWikiFromText(self, text):
+    def text_expansion_wiki(self, text):
         annotated_sentence = self.CoreNLPclient.annotate(text[0].upper() + text[1:])
-        wiki_terms= []
+        term_list= set()
         for index in range(len(annotated_sentence.sentence)):
             tokens= annotated_sentence.sentence[index].token
             for token in tokens:
@@ -34,105 +32,96 @@ class Wiki_Link_Extractor:
                         term= token.value.lower()
                     else:
                         term= token.lemma.lower()
-                    r = requests.get('https://en.wikipedia.org/wiki/'+term)
-                    if r.status_code == 200 and (term not in self.exceptionTerms):
-                        if term in self.wiki_dic:
-                            wiki_terms.append(term)
-                        else:
-                            try:
-                                sentences = wikipedia.summary(term, sentences=4)
-                                self.wiki_dic[term]=sentences
-                                wiki_terms.append(term)
-                            except:
-                                self.exceptionTerms.append(term)
-        return wiki_terms
+                    term_list.add(term)
+        definitions_wiki= self.get_wiki_def(term_list)
+        return definitions_wiki
 
-    def getWikiFromTerms(self, termList, numSentences=1):
-        print('Processing terms in '+str(len(termList)))
-        wiki_sents = {}
+    def get_wiki_def(self, term_list, numSentences=1):
+        print('Processing terms in '+str(len(term_list)))
+        definitions_wiki = {}
         counter=0
-        for term in termList:
+        for term in term_list:
             counter+=1
             if counter%50==0:
                 print(counter)
-            if term not in self.wiki_dic:
+            if term not in self.previous_def:
                 r = requests.get('https://en.wikipedia.org/wiki/' + term)
                 if r.status_code == 200 and (term not in self.exceptionTerms):
                     try:
                         sentences = wikipedia.summary(term, sentences=numSentences)
-                        self.wiki_dic[term] = sentences
-                        wiki_sents[term] = sentences
+                        self.previous_def[term] = sentences
+                        definitions_wiki[term] = sentences
                     except:
-                        self.exceptionTerms.append(term)
+                        self.exceptionTerms.add(term)
             else:
-                wiki_sents[term]= self.wiki_dic[term]
+                definitions_wiki[term]= self.previous_def[term]
         f = open('../data/terms_to_defs.txt', 'w')
-        f.write(str(self.wiki_dic))
+        f.write(str(self.previous_def))
         f.close()
-        return wiki_sents
+        return definitions_wiki
 
-    def getDataQA(self, dataset, file):
-        f=open('data/'+file)
-        questions= f.read().split('\n')[:-1]
-        f.close()
-        f = open('data/Wikipedia/'+dataset+'/'+file, 'w')
-        current=0
-        for q in questions:
-            current+=1
-            question_json = json.loads(q)
+    def get_wn_def(self, term_list):
+        english_words = set(words.words())
+        print('Processing terms in ' + str(len(term_list)))
+        definitions_wn = {}
+        counter=0
+        dictionary = PyDictionary()
+        for term in term_list:
+            counter+=1
+            if counter%50==0: print(counter)
+            #if term in english_words:
             try:
-                print("processing question n" + str(current))
-                sentence= question_json['question']['stem']
-                wiki_sentence= self.getWikiTerms(sentence)
-                question_json['question']['wikiTerms'] = wiki_sentence
-                answers = question_json['question']['choices']
-                for i in range(len(answers)):
-                    wiki_answer= self.getWikiTerms(answers[i]['text'])
-                    question_json['question']['choices'][i]['wikiTerms'] = wiki_answer
-                out_question= json.dumps(question_json)
-                f.write(out_question+'\n')
+                definition= dictionary.meaning(term)
+                if 'Noun' in definition:
+                    if len(definition['Noun']) > 0:
+                        definition_text= definition['Noun'][0]
+                        definitions_wn[term] = term[0].upper() + term[1:] +' is ' +definition_text
+                    else:
+                        print("Not found: "+ term)
             except:
-                out_question = json.dumps(question_json)
-                f.write(out_question + '\n')
-                print("Question did not process")
-                print(q)
-        f.close()
+                print("Not valid english: "+ term)
+        return definitions_wn
 
+    def save_definitions(self, def_source, term_list, save_file):
+        if os.path.exists(save_file+ '_'+ def_source+'.json'):
+            prev_definitions= json.load(open(save_file+ '_'+ def_source+'.json'))
+            term_list= term_list-prev_definitions.keys()
+        if def_source=='wn':
+            definitions= self.get_wn_def(term_list)
+        else:
+            definitions= self.get_wiki_def(term_list)
+        if os.path.exists(save_file+ '_'+ def_source+'.json'):
+            prev_definitions.update(definitions)
+            definitions= prev_definitions
+        json.dump(definitions, open(save_file+ '_'+ def_source+'.json', 'w'))
 
-    def getTermsData(self, outputF):
-        f=open('../data/terms_to_defs.txt')
-        self.wiki_dic= ast.literal_eval(f.read())
-        f.close()
-        for file in self.dataFiles:
-            f=open('../data/'+file)
-            lines=f.read().split('\n')[:-1]
-            f.close()
-        f = open('../data/' + outputF + '.txt', 'w')
-        f.write(str(self.wiki_dic))
-        f.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description='Augment Data with Wikipedia Links')
-    parser.add_argument('--dataset', type=str)
+    parser.add_argument('--dataset', type=str, default=None)
+    parser.add_argument('--term_file', type=str, default= '../data/word-sim/ws_terms_nominals')
+    parser.add_argument('--save_file', type=str, default='../data/term_definitions')
+    parser.add_argument('--def_source', type=str, default='wn')
+    parser.add_argument('--previous_def_file', type=str, default=None)
     parser.add_argument('--corenlp', type=str, default='/Users/evangeliaspiliopoulou/Desktop/stanfordCoreNLP')
     args = parser.parse_args()
     corenlpPath= args.corenlp
-    dataFiles= args.dataset
-    #
-    # if dataset=='OpenBook':
-    #     data= {'OpenBook':['train.jsonl', 'test.jsonl', 'dev.jsonl']}
-    # elif dataset=='ARC-Easy':
-    #     data = {'ARC':['ARC-Easy-Train.jsonl', 'ARC-Easy-Dev.jsonl', 'ARC-Easy-Test.jsonl']}
-    # elif dataset== 'ARC-Challenge':
-    #     data= {'ARC':['ARC-Challenge-Dev.jsonl', 'ARC-Challenge-Train.jsonl', 'ARC-Challenge-Test.jsonl']}
-    # else:
-    #     print('Dataset is not valid')
-    #     print('Please choose options:   ARC-Easy, ARC-Challenge or OpenBook')
-    #     return []
-    wikiLoader = Wiki_Link_Extractor(dataFiles, corenlpPath)
-    print('Processing starts...')
-    wikiLoader.writeAllData('terms_to_defs')
+    def_source= args.def_source
+    save_file= args.save_file
+    previous_def_file= args.previous_def_file
+    dataset= args.dataset
+    if dataset== None:
+        term_file=args.term_file
+        f=open(term_file)
+        term_list= f.read().split('\n')[:-1]
+        f.close()
+        definition_finder = Definition_Finder(corenlpPath, previous_def_file)
+        definition_finder.save_definitions(def_source, set(term_list), save_file)
+
+    else:
+        print('No dataset instructions given....')
+
 
 
 

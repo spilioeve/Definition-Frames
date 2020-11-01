@@ -4,26 +4,27 @@ import torch.nn.functional as F
 
 
 class BiLSTM(nn.Module):
-    def __init__(self, labels, vocab_size, pos_size, chunk_size, embedding_dim, hidden_dim, number_layers, batch_size):
+    def __init__(self, labels, vocab_size, pos_size, chunk_size, embedding_dim, hidden_dim, num_layers, batch_size):
         super(BiLSTM, self).__init__()
         self.embedding_dim = embedding_dim
         self.hidden_dim = hidden_dim
         self.vocab_size = vocab_size
         self.label_size = len(labels)
         self.batch_size= batch_size
-        self.number_layers= number_layers
+        self.num_layers= num_layers
         self.word_embeds = nn.Embedding(vocab_size, embedding_dim, padding_idx= 0)
         self.chunk_embeds = nn.Embedding(chunk_size, 10, padding_idx= 0)
         self.pos_embeds = nn.Embedding(pos_size, 10, padding_idx= 0)
-        self.lstm = nn.LSTM(embedding_dim+21, hidden_size=hidden_dim, bidirectional=True, batch_first=True)
-        self.hidden2labels = nn.Linear(hidden_dim*2, self.label_size)
+        self.lstm = nn.LSTM(embedding_dim+21, hidden_size=hidden_dim, bidirectional=True, batch_first=True, num_layers=num_layers)
+        self.hidden2labels = nn.Linear(2*hidden_dim, self.label_size)
         self.hidden = self.init_hidden()
 
 
     def init_hidden(self):
-        hidden1= torch.randn(self.number_layers, self.batch_size, self.hidden_dim)
-        hidden2 = torch.randn(self.number_layers, self.batch_size, self.hidden_dim)
+        hidden1= torch.randn(2*self.num_layers, self.batch_size, self.hidden_dim)
+        hidden2 = torch.randn(2*self.num_layers, self.batch_size, self.hidden_dim)
         return (hidden1, hidden2)
+
 
     def forward(self, sentence, char, sentences_length):
         self.hidden = self.init_hidden()
@@ -50,8 +51,8 @@ class BiLSTM(nn.Module):
         y = y.view(-1)
         y_pred= y_pred.view(-1, self.label_size)
         mask = (y > 0).float()
-        nb_tokens = int(torch.sum(mask).data[0])
-        #nb_tokens = int(torch.sum(mask).item(0))
+        #nb_tokens = int(torch.sum(mask).data[0])
+        nb_tokens = int(torch.sum(mask).item())
         y_pred = y_pred[range(y_pred.shape[0]), y] * mask
         ce_loss = -torch.sum(y_pred) / nb_tokens
         return  ce_loss

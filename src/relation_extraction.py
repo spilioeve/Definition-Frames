@@ -13,16 +13,18 @@ import numpy as np
 import ast
 from bert_embedding import BertEmbedding
 import string
+from ast import literal_eval as eval
+import json
 
 torch.manual_seed(1)
-
+bert= BertEmbedding(max_seq_length=100)
 
 def setEmbeddings(embed_type):
     embeddings = {}
     if embed_type== None:
         return {}
     if embed_type == 'glove':
-        file = '../data/glove.6B.100d.txt'
+        file = '../data/embeddings/glove.6B.100d.txt'
         f = open(file)
         lines = f.read().split('\n')[:-1]
         f.close()
@@ -33,13 +35,36 @@ def setEmbeddings(embed_type):
             embeddings[word] = np.array(vector)
         embeddings['UNK'] = np.zeros(len(vector))
     elif embed_type=='bert':
-        embeddings= BertEmbedding(max_seq_length=100)
+        f = open('../data/embeddings/bert/indexer.json')
+        indexer= json.load(f)
+        f.close()
+        f= open('../data/embeddings/bert/all_embeddings.txt')
+        lines=f.readlines()
+        f.close()
+        print('Number of sentences in data: ')
+        print(len(lines))
+        print(len(indexer))
+        for index in range(len(lines)):
+            if index%1000==0: print(index)
+            line=lines[index].strip('\n')
+            vectors = line.split('], ')
+            vectors[0] = vectors[0][1:]
+            vectors[-1] = vectors[-1][:-2]
+            sentence_vector=[]
+            for vector in vectors:
+                vector= vector[1:-1]
+                vector= np.fromstring(vector, dtype=float, sep=', ')
+                sentence_vector.append(vector)
+            sentence= indexer[str(index)]
+            embeddings[sentence]= sentence_vector
+        #embeddings= BertEmbedding(max_seq_length=100)
     return embeddings
 
 class RelationExtraction:
 
-    def __init__(self, modelType, embedding_type=None, embed_Dim=200, charDim=30, hidden=100, num_layers=2):
+    def __init__(self, modelType, embedding_type, embed_Dim=300, charDim=30, hidden=100, num_layers=2):
         self.embeddings= setEmbeddings(embedding_type)
+        print("Embeddings set...")
         self.embedding_type= embedding_type
         self.word_vocab={'<PAD>':0}
         self.char_vocab={'<PAD>':0}
@@ -61,7 +86,6 @@ class RelationExtraction:
     def load_data(self, dataFile):
         f=open(dataFile)
         sentences= f.read().split('\n\n')
-        #sentences = f.read().split('\n\n')[:-1]
         f.close()
         data=[]
         dataText=[]
@@ -71,8 +95,6 @@ class RelationExtraction:
             sentence = s.split('\n')
             words=[]
             for wordVector in sentence:
-                # if len(wordVector.split(' '))<2:
-                #     pdb.set_trace()
                 sentNumber, word, pos, chunk, flag, y = wordVector.split(' ')
                 word = word.lower()
                 words.append(word)
@@ -98,6 +120,9 @@ class RelationExtraction:
             text = str.join(' ', words)
             dataText.append(text)
         for s in sentences:
+            if len(s)==0:
+                continue
+            s=s.strip('\n')
             sentence = s.split('\n')
             x_vector = []
             y_vector = []
@@ -105,19 +130,24 @@ class RelationExtraction:
             char_vector = []
             for wordVector in sentence:
                 sentNumber, word, pos, chunk, flag, y = wordVector.split(' ')
-                word = word.lower()
                 words.append(word)
             text = str.join(' ', words)
             sentence_embeddings= self.encode_sentence(text)
+            index=0
             for i in range(len(sentence)):
                 sentNumber, word, pos, chunk, flag, y = sentence[i].split(' ')
                 word=word.lower()
-                word_embedding= sentence_embeddings[i]
+                if index < len(sentence_embeddings):
+                    word_embedding= sentence_embeddings[index]
+                else:
+                    word_embedding = sentence_embeddings[-1]
                 pos_val = self.pos_vocab[pos]
                 chunk_val = self.chunk_vocab[chunk]
                 x_vector.append(np.append(word_embedding, [pos_val, chunk_val, int(flag)]))  ##Changed
                 y_vector.append(self.labels[y])
                 char_vector.append([self.char_vocab[i] for i in word]+[self.char_vocab['<PAD>'] for j in range(self.Max_Char-len(word))])
+                if word in ['-rrb-', '-lrb-']: index+=3
+                else: index+=1
             char_tensor = torch.tensor(char_vector, dtype=torch.long)
             if self.embedding_type== 'None':
                 x_tensor = torch.tensor(x_vector, dtype=torch.long)
@@ -194,8 +224,12 @@ class RelationExtraction:
         words = sentence.split(' ')
         # Data already preprocessec and clean!
         if self.embedding_type == 'bert':
-            bert_encode = self.embeddings([sentence])
-            bert_embed = bert_encode[0][1]
+            if sentence in self.embeddings:
+                bert_embed = self.embeddings[sentence]
+            else:
+                print('Sentence not found')
+                bert_encode= bert([sentence])
+                bert_embed = bert_encode[0][1]
             #x_tensor = torch.tensor(bert_embed, dtype=torch.float)
             return bert_embed
         elif self.embedding_type == 'glove':
@@ -324,47 +358,75 @@ class RelationExtraction:
         return F1_micro, F1_macro
 
 
-    def train_model(self, num_epochs, trainData, testData=None, batch_size=16, modelType='LSTM'):
-        testDataPath='../data/'+testData
-        train= self.load_data('../data/'+trainData+ '/train.ibo')
-        dev= self.load_data('../data/'+trainData+'/dev.ibo')
-        test= self.load_data('../data/'+trainData+'/test.ibo')
-        dev = self.batchify(dev, batch_size)
+    def train_model(self, num_epochs, cn_file, ann_file, test_file=None, batch_size=16, modelType='LSTM'):
+        cn_train= self.load_data('../data/'+cn_file+ '/train.ibo')
+        cn_dev= self.load_data('../data/'+cn_file+'/dev.ibo')
+        cn_test= self.load_data('../data/'+cn_file+'/test.ibo')
+        print("Data Loaded...")
+        cn_dev = self.batchify(cn_dev, batch_size)
+        cn_test = self.batchify(cn_test, batch_size, randomize=False)
+        test = self.load_data('../data/'+test_file)
         test = self.batchify(test, batch_size, randomize=False)
-        wiki = self.load_data(testDataPath)
-        wiki = self.batchify(wiki, batch_size, randomize=False)
-        f=open('../data/model_vocabulary.txt', 'w')
-        vocab_params={'word_vocab':self.word_vocab, 'char_vocab':self.char_vocab, 'word_inverse': self.word_inverse, 'chars_inverse':self.chars_inverse,
-                      'pos_vocab':self.pos_vocab, 'chunk_vocab':self.chunk_vocab, 'labels':self.labels, 'labels_inverse':self.labels_inverse}
-        f.write(str(vocab_params))
-        f.close()
+        ann_train= self.load_data('../data/'+ ann_file)
+
         if modelType== 'BiLSTM_CNN':
             print('Model not currently available')
             model= BiLSTM_CNN(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), len(self.char_vocab), self.embed_Dim, self.charDim, self.hidden, self.num_layers, batch_size,
                               num_filters=30, kernel_size= 3)
             #(self, labels, vocab_size, pos_size, chunk_size, embedding_dim, hidden_dim, number_layers, batch_Size, char_embed_dim, char_size, num_filters, kernel_size):
         elif self.embedding_type== 'bert':
-            embedding_dim= train[0][0].shape[1]
+            embedding_dim= cn_train[0][0].shape[1]
             model = BiLSTM_BERT(embedding_dim, self.hidden, len(self.labels), batch_size, self.num_layers, self.use_gpu)
         else:
             model= BiLSTM(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), self.embed_Dim, self.hidden, self.num_layers, batch_size)
-
         if self.use_gpu:
             model= model.cuda()
         # train.cuda()
-        optimizer = optim.SGD(model.parameters(), lr=0.03, weight_decay=1e-4)
+        optimizer = optim.Adagrad(model.parameters(), lr=0.05, weight_decay=1e-4)
         print('Evaluating Train Data:')
         with torch.no_grad():
-            train_i = self.batchify(train, batch_size)
-            self.test(model, train_i, '../data/output/train.ibo', True)
+            train_i = self.batchify(cn_train, batch_size)
+            self.test(model, train_i, '../data/output/train.ibo')
         best_f1_macro=0.0
         best_f1_micro=0.0
-        print('Start training..')
+        print('Start pre-training..')
         for epoch in range(num_epochs):
             print('Epoch Number:')
             print(epoch)
+            total_loss=0.
+            train_i= self.batchify(cn_train, batch_size)
+            for x, char, y, seq_lengths, sentence in train_i:
+                model.zero_grad()
+                y_pred= model(x, char, seq_lengths)
+                my_loss= model.loss(y_pred, y, seq_lengths)
+                total_loss+=my_loss
+                my_loss.backward()
+                optimizer.step()
+                del my_loss
+            with torch.no_grad():
+                print("Loss: Train set", total_loss)
+                #self.test(model, train_i)
+                print("Evaluation: Dev set")
+                f1_micro, f1_macro = self.test(model, cn_dev)
+                if f1_micro <= best_f1_micro:
+                    print('Early Convergence!!!!')
+                    break
+                elif f1_macro <= best_f1_macro:
+                    print('Early Convergence!!!!')
+                    break
+                else:
+                    best_f1_micro= f1_micro
+                    best_f1_macro = f1_macro
+        with torch.no_grad():
+            print('Predictions For Test Set are:')
+            self.test(model, cn_test, '../data/output/cn_test'+ '.ibo')
+            self.test(model, test, '../data/output/' + test_file[:-4]+ '_cn.ibo', True)
+        print('Fine-tuning on annotated definitions..')
+        for epoch in range(10):
+            print('Epoch Number:')
+            print(epoch)
             total_Loss=0.
-            train_i= self.batchify(train, batch_size)
+            train_i= self.batchify(ann_train, batch_size)
             for x, char, y, seq_lengths, sentence in train_i:
                 model.zero_grad()
                 y_pred= model(x, char, seq_lengths)
@@ -373,40 +435,21 @@ class RelationExtraction:
                 myLoss.backward()
                 optimizer.step()
                 del myLoss
-            with torch.no_grad():
-                print("Loss: Train set", total_Loss)
-                #self.test(model, train_i)
-                print("Evaluation: Dev set")
-                f1_micro, f1_macro = self.test(model, dev)
-                if f1_micro < best_f1_micro:
-                    print('Early Convergence!!!!')
-                    break
-                elif f1_macro < best_f1_macro:
-                    print('Early Convergence!!!!')
-                    break
-                else:
-                    best_f1_micro= f1_micro
-                    best_f1_macro = f1_macro
         with torch.no_grad():
             print('Predictions For Test Set are:')
-            self.test(model, test, '../data/output/test'+ '.ibo', True)
-            #self.test(model, wiki, '../data/output/wiki_' + str(testData) + '.ibo', True)
-            if testData!= 'None':
-                wiki = self.load_data(testDataPath)
-                wiki = self.batchify(wiki, batch_size, randomize=False)
-                self.test(model, wiki, '../data/output/wiki_'+ str(testData), True)
+            self.test(model, train_i, '../data/output/ann_train'+ '.ibo')
+            self.test(model, test, '../data/output/' + test_file[:-4]+ '_ann.ibo', True)
         torch.save(model, '../models/model_'+str(modelType))
-        pdb.set_trace()
 
     def update_params(self, params):
-        self.labels_inverse=params['labels_inverse']
-        self.labels= params['labels']
-        self.chunk_vocab=params['chunk_vocab']
-        self.pos_vocab=params['pos_vocab']
-        self.chars_inverse=params['chars_inverse']
-        self.word_inverse=params['word_inverse']
-        self.char_vocab=params['char_vocab']
-        self.word_vocab=params['word_vocab']
+        self.labels_inverse = params['labels_inverse']
+        self.labels = params['labels']
+        self.chunk_vocab = params['chunk_vocab']
+        self.pos_vocab = params['pos_vocab']
+        self.chars_inverse = params['chars_inverse']
+        self.word_inverse = params['word_inverse']
+        self.char_vocab = params['char_vocab']
+        self.word_vocab = params['word_vocab']
 
     def evaluateModel(self, testDataSet, modelName, batch_size, embeddings=False):
         # trainData='ConceptNet'
@@ -423,10 +466,8 @@ class RelationExtraction:
         vocab_params= ast.literal_eval(f.read())
         f.close()
         self.update_params(vocab_params)
-        pdb.set_trace()
         wiki = self.load_data('../data/' + testDataSet)
-        wiki = self.batchify(wiki, batch_size, 4, randomize=False)
-
+        wiki = self.batchify(wiki, batch_size, randomize=False)
         #model= BiLSTM(self.labels, len(self.word_vocab), len(self.pos_vocab), len(self.chunk_vocab), self.embed_Dim, self.hidden, self.num_layers, batch_size)
         model= torch.load('../models/'+modelName)
         model.eval()
@@ -439,18 +480,21 @@ class RelationExtraction:
 
 def main():
     parser = argparse.ArgumentParser(description='Run Relation Extraction Module on ConceptNet')
-    parser.add_argument('--num_epochs', type=int, default=20, help='Number of training epochs')
+    parser.add_argument('--num_epochs', type=int, default=30, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=16, help='Number of sentences in each batch')
     parser.add_argument('--model', default= 'LSTM', help='the NN model')
     parser.add_argument('--embedDim', type= int, default= 200, help='Embedding Dimension')
+    parser.add_argument('--embedding_type', type=str, default=None, help='Embedding type( bert/none')
     parser.add_argument('--charDim', type=int, default=30, help='Char embedding Dimension')
     parser.add_argument('--hiddenDim', type=int, default=100, help='Hidden Layer Dimension')
     parser.add_argument('--path', type= str, default= '', help='Path to src code')
     parser.add_argument('--num_layers', type=int, default=2, help='Number of layers in NN')
     parser.add_argument('--outputPath', type=str, default='data/output')
-    parser.add_argument('--testDataset', type=str, default='FrameTerms.ibo')
+
+    parser.add_argument('--test_file', type=str, default='FrameTerms_wn.ibo')
+    parser.add_argument('--ann_file', type=str, default='AnnotationTerms_wn.ibo')
     parser.add_argument('--mode', type=str, default= 'train')
-    parser.add_argument('--input_model', default=None)
+    parser.add_argument('--input_model', default='../models/model_LSTM')
 
     args = parser.parse_args()
 
@@ -461,16 +505,19 @@ def main():
     num_epochs = args.num_epochs
     batch_size= args.batch_size
     num_layers= args.num_layers
-    testDataset= args.testDataset
+    test_file= args.test_file
+    ann_file= args.ann_file
+    embedding_type= args.embedding_type
     mode= args.mode
 
-    rel_extractor = RelationExtraction(modelType, embedding_type= 'bert')
+    rel_extractor = RelationExtraction(modelType, embedding_type= embedding_type, num_layers= num_layers)
+    #rel_extractor = RelationExtraction(modelType, embedding_type='bert')
     if mode== 'train':
-        rel_extractor.train_model(num_epochs, 'ConceptNet', testDataset, batch_size, modelType)
+        rel_extractor.train_model(num_epochs, 'ConceptNet', ann_file, test_file, batch_size, modelType)
     else:
         print('Evaluating Model')
         model_name= args.input_model
-        rel_extractor.evaluateModel(testDataset, model_name, batch_size)
+        rel_extractor.evaluateModel(test_file, model_name, batch_size)
 
 
 
